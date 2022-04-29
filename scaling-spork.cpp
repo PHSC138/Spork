@@ -15,6 +15,7 @@
 #include <curlpp/cURLpp.hpp>
 #include <curlpp/Easy.hpp>
 #include <curlpp/Options.hpp>
+#include <curlpp/Infos.hpp>
 #include <curlpp/Exception.hpp>
 
 using json = nlohmann::json;
@@ -26,8 +27,6 @@ using json = nlohmann::json;
 
 // Maximum number of threads (given by handout)
 #define MAX_THREADS 64
-// Current number of threads
-unsigned int num_threads;
 
 int main(int argc, char** argv) {
     if (DEBUG) {
@@ -69,6 +68,12 @@ int main(int argc, char** argv) {
     std::string address = config["address"];
     std::string protocol = config["protocol"];
     auto protocol_options = config["protocol_options"];
+    // Current number of threads
+    unsigned int num_threads = config["threads"];
+    if (num_threads > MAX_THREADS) { 
+        std::cout << "Threads provided " << num_threads << " > MAX_THREADS " << MAX_THREADS << std::endl;
+        exit(1);
+    }
 
     std::vector<std::fstream *> data_files;
     std::vector<int> data_file_sizes;
@@ -85,6 +90,8 @@ int main(int argc, char** argv) {
         }
 
         data_files.push_back(file);
+        
+        // Find number of elements in newline separated files
         data_file_sizes.push_back(std::count(std::istreambuf_iterator<char>(*file), std::istreambuf_iterator<char>(), '\n'));
         if (DEBUG) std::cout << "File size: " << data_file_sizes.back() << std::endl;
     }
@@ -100,6 +107,7 @@ int main(int argc, char** argv) {
         transform(http_method.begin(), http_method.end(), http_method.begin(), ::tolower);
         auto http_data = protocol_options["http_data"];
 
+        // cURLpp to send http post request
         try {
             curlpp::Cleanup cleaner;
             curlpp::Easy request;
@@ -118,6 +126,17 @@ int main(int argc, char** argv) {
             request.setOpt(new curlpp::options::UserPwd("user:password"));
             
             request.perform(); 
+
+            //other way to retreive URL
+            std::cout << std::endl 
+                << "Effective URL: " 
+                << curlpp::infos::EffectiveUrl::get(request)
+                << std::endl;
+
+            std::cout << "Response code: " 
+                << curlpp::infos::ResponseCode::get(request) 
+                << std::endl;
+
         }
         catch ( curlpp::LogicError & e ) {
             std::cout << e.what() << std::endl;
@@ -127,7 +146,7 @@ int main(int argc, char** argv) {
         }
 
     } else {
-        // TODO: support raw
+        // TODO: support raw (nc / ncat / raw sockets?)
         std::cout << "Unsupported protocol " << protocol <<  " only supporting http currently" << std::endl;
         exit(1);
     }

@@ -5,7 +5,8 @@
         "http_method": "post",
         "http_data": {
             "username": "$1",
-            "password": "$2"
+            "password": "$2",
+            "extra": "yeet"
         }
     },
     "address": "127.0.0.1:8080",
