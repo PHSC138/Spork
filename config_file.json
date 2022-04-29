@@ -1,0 +1,15 @@
+{
+    "protocol": "http",
+    "protocol_options": {
+        "http_method": "post",
+        "http_data": {
+            "username": "$1",
+            "password": "$2"
+        }
+    },
+    "address": "127.0.0.1:8080",
+    "payload": [
+        "./usernames.txt",
+        "./passwords.txt"
+    ]
+}
