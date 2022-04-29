@@ -1,4 +1,4 @@
-# CS 525 Final project
+# CS 525 Final project: Spork
 - Ryan Hennessee
 
 ## Installing curlpp
@@ -13,7 +13,7 @@
 - `sudo make install`
 
 
-## To compile scaling-spork
+## To compile spork
 - `cmake .`
 - `make`
 

@@ -1,4 +1,4 @@
-project(scaling-spork)
+project(spork)
 
 cmake_minimum_required(VERSION 3.0)
 include(FindPkgConfig)
@@ -27,13 +27,13 @@ foreach(Example ${ExamplesFileList})
   add_dependencies(build_all_examples ${ExampleName})
 endforeach(Example ${ExamplesFileList})
 
-# Create a meta target to create scaling-spork
-add_custom_target(build_scaling-spork COMMENT A target that builds scaling-spork.)
+# Create a meta target to create spork
+add_custom_target(build_spork COMMENT A target that builds spork.)
 
-message(STATUS "Creating build rules for Scaling-Spork:")
+message(STATUS "Creating build rules for Spork:")
 # Define example executable
-add_executable(scaling-spork scaling-spork.cpp)
+add_executable(spork spork.cpp)
 # Link example against curlpp
-target_link_libraries(scaling-spork ${CURLPP_LDFLAGS})
+target_link_libraries(spork ${CURLPP_LDFLAGS})
 # make the meta target depend on this example.
-add_dependencies(build_scaling-spork scaling-spork)
+add_dependencies(build_spork spork)
