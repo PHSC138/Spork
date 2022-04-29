@@ -1,4 +1,4 @@
-project(spaghetti)
+project(scaling-spork)
 
 cmake_minimum_required(VERSION 3.0)
 include(FindPkgConfig)

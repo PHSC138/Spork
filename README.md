@@ -1,7 +1,20 @@
-# Final project
+# CS 525 Final project
 - Ryan Hennessee
 
-## To compile
+## Installing curlpp
+- Curlpp is a required library for this project, it is thread safe which makes it ideal for use in a parallel program.
+- This library is a C++ wrapper for libcurl 
+- curlpp can be found here [https://github.com/jpbarrette/curlpp/tree/v0.8.1](https://github.com/jpbarrette/curlpp/tree/v0.8.1)
+- Navigate to the download / clone directory
+- `mkdir build`
+- `cd build`
+- `cmake ../`
+- `make`
+- `sudo make install`
+
+
+## To compile scaling-spork
+- `cmake .`
 - `make`
 
 ## To run

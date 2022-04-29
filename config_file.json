@@ -1,4 +1,5 @@
 {
+    "threads": 8,
     "protocol": "http",
     "protocol_options": {
         "http_method": "post",
