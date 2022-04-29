@@ -27,13 +27,13 @@ foreach(Example ${ExamplesFileList})
   add_dependencies(build_all_examples ${ExampleName})
 endforeach(Example ${ExamplesFileList})
 
-# Create a meta target to create spaghetti
-add_custom_target(build_spaghetti COMMENT A target that builds spaghetti.)
+# Create a meta target to create scaling-spork
+add_custom_target(build_scaling-spork COMMENT A target that builds scaling-spork.)
 
-message(STATUS "Creating build rules for Spaghetti:")
+message(STATUS "Creating build rules for Scaling-Spork:")
 # Define example executable
-add_executable(spaghetti spaghetti.cpp)
+add_executable(scaling-spork scaling-spork.cpp)
 # Link example against curlpp
-target_link_libraries(spaghetti ${CURLPP_LDFLAGS})
+target_link_libraries(scaling-spork ${CURLPP_LDFLAGS})
 # make the meta target depend on this example.
-add_dependencies(build_spaghetti spaghetti)
+add_dependencies(build_scaling-spork scaling-spork)
