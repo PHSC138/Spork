@@ -36,12 +36,10 @@ using std::endl;
 // https://stackoverflow.com/questions/5207550/in-c-is-there-a-way-to-go-to-a-specific-line-in-a-text-file
 std::fstream *GotoLine(std::fstream *file, unsigned int num) {
   file->seekg(std::ios::beg);
-  cout << "GotoLine " << num << endl;
   if (num <= 1)
     return file;
   for (int i = 0; i < num - 1; ++i) {
     file->ignore(std::numeric_limits<std::streamsize>::max(), '\n');
-    cout << "newline" << endl;
   }
   return file;
 }
