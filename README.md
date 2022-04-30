@@ -20,6 +20,7 @@
 
 ## To compile spork
 - Please follow the steps above to build cURLpp and put the `.so` files into the Spork directory
+- In the top level directory:
 - `mkdir build`
     - Make a build directory for Spork
 - `cmake ../`
@@ -27,7 +28,7 @@
 - `make`
 
 ## To run
-- An example `payload_file.json` is provided, it will query `127.0.0.1:4000` with the 500 worst passwords stored in `500-worst.txt`.
+- An example `payload_file.json` is provided, it will query `127.0.0.1:4000` with the 500 worst passwords stored in `500-worst.txt` and it will try each password with each username stored in `usernames.txt`.
 - To see the requests start the provided `echo_server.py` python server `./echo_server 4000` in another window
 - Run using `./spork ../payload_file.json > out.txt 2>&1`
 
@@ -44,13 +45,11 @@
             "username": "$0",
             "password": "$1",
             "extra": "any static value"
-            ...
         }
     },
-    "payload": [ // list of data
+    "payload": [
         "../usernames.txt",
-        "../500-worst.txt", // path to data source (separated by newlines)
-        ...
+        "../500-worst.txt"
     ]
 }
 ```
