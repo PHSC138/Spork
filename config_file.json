@@ -1,17 +1,16 @@
 {
-    "threads": 2,
+    "threads": 32,
     "protocol": "http",
     "protocol_options": {
         "http_method": "post",
         "http_data": {
             "username": "$0",
-            "password": "$1",
-            "extra": "yeet"
+            "password": "$1"
         }
     },
-    "address": "127.0.0.1:8080",
+    "address": "127.0.0.1:4000/login",
     "payload": [
         "../usernames.txt",
-        "../2pass.txt"
+        "../500-worst.txt"
     ]
 }

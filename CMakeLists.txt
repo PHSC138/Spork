@@ -38,6 +38,7 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 add_executable(spork spork.cpp statelist.cpp)
 # Link example against curlpp
 target_link_libraries(spork ${CURLPP_LDFLAGS})
-set(CMAKE_BUILD_TYPE Debug)
+# Uncomment this for debugging
+# set(CMAKE_BUILD_TYPE Debug)
 # make the meta target depend on this example.
 add_dependencies(build_spork spork)
