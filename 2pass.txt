@@ -1,2 +1,2 @@
-12345
-passwordtoo
+123456
+psktoo

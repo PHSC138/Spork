@@ -33,16 +33,18 @@ using std::endl;
 #define MAX_THREADS 64
 
 // https://stackoverflow.com/questions/5207550/in-c-is-there-a-way-to-go-to-a-specific-line-in-a-text-file
-std::fstream& GotoLine(std::fstream& file, unsigned int num){
-    file.seekg(std::ios::beg);
-    if (num == 0) return file;
+std::fstream * GotoLine(std::fstream * file, unsigned int num){
+    file->seekg(std::ios::beg);
+    cout << "GotoLine " << num << endl;
+    if (num <= 1) return file;
     for(int i=0; i < num - 1; ++i) {
-        file.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+        file->ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+        cout << "newline" << endl;
     }
     return file;
 }
 
-void do_http(std::string http_options, std::string address, std::vector<std::fstream *> *payload_files, std::vector<unsigned> *payload_file_sizes, unsigned payload_file_index, 
+void do_http(std::string http_options, std::string address, std::vector<std::string> *payload_files, std::vector<unsigned> *payload_file_sizes, unsigned payload_file_index, 
     unsigned start, unsigned size) {
     cout << "Thread ID "<< std::this_thread::get_id() << " starting up with file_index " << 
     payload_file_index << " start " << start << " and size " << size << endl;
@@ -54,18 +56,43 @@ void do_http(std::string http_options, std::string address, std::vector<std::fst
     transform(http_method.begin(), http_method.end(), http_method.begin(), ::tolower);
     auto http_data = json_options["http_data"];
 
-    // Outer fstream
-    // Get to proper line number
-    std::fstream &outer_fstream = GotoLine(*(payload_files->at(payload_file_index)), start);
-
-    // Remove outer loop file from vectors
     // The inner_fstreams will be the file pointers to the inner payload files
     // This is used to do the cartesian product
-    std::vector<std::fstream *> inner_fstreams = std::vector(*payload_files);
-    std::vector<unsigned> inner_sizes = std::vector(*payload_file_sizes);
-    inner_fstreams.erase(inner_fstreams.begin() + payload_file_index);
-    inner_sizes.erase(inner_sizes.begin() + payload_file_index);
+    // Outer fstream
+    std::fstream *outer_fstream = new std::fstream();
+    std::vector<std::fstream *> inner_fstreams;
+    for (unsigned i = 0; i < payload_files->size(); i++) {
+        std::string path = payload_files->at(i);
+        if (DEBUG) cout << "Opening " << path << endl;
 
+        if (i == payload_file_index) {
+            outer_fstream->open(path, std::ios::in);
+
+            if (!(*outer_fstream)) {
+                cout << "Error opening file: " << path <<endl;
+                exit(1);
+            }
+
+            // Get to proper line number
+            outer_fstream = GotoLine(outer_fstream, start);
+        } else {
+            // Don't include outer fstream in the inner fstreams
+            std::fstream * stream = new std::fstream();
+            stream->open(path, std::ios::in);
+
+            if (!(*stream)) {
+                cout << "Error opening file: " << path <<endl;
+                exit(1);
+            }
+
+            inner_fstreams.push_back(stream);
+        }
+    }
+
+
+    // Remove size of outer loop file from payload_file_sizes
+    std::vector<unsigned> inner_sizes = std::vector(*payload_file_sizes);
+    inner_sizes.erase(inner_sizes.begin() + payload_file_index);
 
     // cURLpp to send http post request
     try {
@@ -83,20 +110,19 @@ void do_http(std::string http_options, std::string address, std::vector<std::fst
         
         // Loop through outer data
         std::string outer_line; 
-        for(unsigned outer_loop_counter = 0; outer_loop_counter < start + size; outer_loop_counter++) { 
+        for(unsigned outer_loop_counter = start; outer_loop_counter < start + size; outer_loop_counter++) { 
 
             // Read outer file line
-            std::getline(outer_fstream, outer_line);
+            std::getline(*outer_fstream, outer_line);
             cout << "Outer_line: " << outer_line << endl; 
 
             StateList state_list = StateList(inner_sizes);
+            std::vector<int> previous_state;
+            std::vector<std::string> previous_state_values(inner_sizes.size(), "");
 
             // Cartesian product loop using a state list
             while (!state_list.is_done()) {
-                cout << "Iterations: " << state_list.get_iterations() << endl << std::flush;
-                
-                // TODO: remove this safety if
-                // if (state_list.get_iterations() > 5) break;
+                cout << "Iterations: " << state_list.get_iterations() << endl;
 
                 std::vector<unsigned> current_state = state_list.get_state();
 
@@ -120,12 +146,18 @@ void do_http(std::string http_options, std::string address, std::vector<std::fst
                                 // Find state (current line) of index
                                 // If state is 0, go to top, else fstream SHOULD be at top of file, so can just use getline
                                 if (DEBUG) cout << "inner_fstreams.size() " << inner_fstreams.size() << " index " << index << endl;
-                                std::fstream *current_fstream = inner_fstreams.at(index);
+                                std::fstream *current_fstream = inner_fstreams[index];
                                 std::string inner_line;
-                                cout << "current_state.at(" << index << "): " << current_state.at(index) << endl;
-                                if (current_state.at(index) == 0) current_fstream->seekg(std::ios::beg);
+                                cout << "current_state[" << index << "]: " << current_state[index] << endl;
+                                if (current_state[index] == 0) current_fstream->seekg(std::ios::beg);
 
-                                std::getline(*current_fstream, inner_line);
+                                if (previous_state.size() == 0 || previous_state[index] != current_state[index]) {
+                                    std::getline(*current_fstream, inner_line);
+                                    previous_state_values[index] = inner_line;
+                                } else {
+                                    inner_line = previous_state_values[index];
+                                }
+
                                 data[key] = inner_line;
                             }
                         } else {
@@ -142,6 +174,7 @@ void do_http(std::string http_options, std::string address, std::vector<std::fst
 
                 // Remove the last '&'
                 payload_string.pop_back();
+                if (DEBUG) cout << "Thread " << std::this_thread::get_id() << " sending " << payload_string << endl;
 
                 if (http_method.compare("post") == 0) {
                     // POST request
@@ -170,6 +203,7 @@ void do_http(std::string http_options, std::string address, std::vector<std::fst
                     << curlpp::infos::ResponseCode::get(request) 
                     << endl;
                 state_list.next_state();
+                std::copy(current_state.begin(), current_state.end(), std::back_inserter(previous_state));
             }
         }
     }
@@ -228,25 +262,27 @@ int main(int argc, char** argv) {
         exit(1);
     }
 
-    std::vector<std::fstream*> data_files;
+    std::vector<std::string> data_files;
     std::vector<unsigned> data_file_sizes;
     unsigned max_file_index = 0;
     // even easier with structured bindings (C++17)
     // Open payload files
     for (auto& [key, value] : config["payload"].items()) {
         if (DEBUG) cout << "Opening: " << value << endl;
-        std::fstream *file = new std::fstream();
-        file->open(value, std::ios::in);
+        std::fstream file = std::fstream();
+        file.open(value, std::ios::in);
 
-        if (!(*file)) {
+        if (!file) {
             cout << "Could not open: " << value << endl;
             exit(1);
         }
 
-        data_files.push_back(file);
+        data_files.push_back(value);
         
         // Find number of elements in newline separated files
-        data_file_sizes.push_back(std::count(std::istreambuf_iterator<char>(*file), std::istreambuf_iterator<char>(), '\n'));
+        data_file_sizes.push_back(std::count(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n'));
+        file.close();
+
         if (DEBUG) cout << "File size: " << data_file_sizes.back() << endl;
         
         // Update largest file index
@@ -271,7 +307,7 @@ int main(int argc, char** argv) {
 
         // Do the threading
         std::vector<std::thread> threads;
-        unsigned start_position = 0;
+        unsigned start_position = 1;
         for (unsigned i = 0; i < num_threads; i++) {
             unsigned final_data_size = split_data_size;
 
