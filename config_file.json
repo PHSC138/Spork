@@ -1,5 +1,6 @@
 {
     "threads": 8,
+    "address": "127.0.0.1:4000/login",
     "protocol": "http",
     "protocol_options": {
         "http_method": "post",
@@ -8,7 +9,6 @@
             "password": "$1"
         }
     },
-    "address": "127.0.0.1:4000/login",
     "payload": [
         "../usernames.txt",
         "../500-worst.txt"
