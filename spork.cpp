@@ -26,7 +26,7 @@ using std::cout;
 using std::endl;
 
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 // Maximum number of threads (given by handout)
@@ -111,7 +111,7 @@ void do_http(std::string http_options, std::string address, std::vector<std::str
 
     // TODO: list of json headers
     std::list<std::string> header;
-    header.push_back("Content-Type: application/octet-stream");
+    header.push_back("Content-Type: application/x-www-form-urlencoded");
 
     request.setOpt(new curlpp::options::HttpHeader(header));
 
