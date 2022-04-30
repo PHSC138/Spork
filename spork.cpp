@@ -1,12 +1,15 @@
 #include "json.hpp"
+#include "statelist.hpp"
+
 #include <algorithm>
 #include <fstream>
 #include <iostream>
-#include <pthread.h>
 #include <typeinfo>
 #include <string>
 #include <vector>
 #include <sstream>
+#include <thread>
+#include <limits>
 
 // Curlpp
 #include <cstdlib>
@@ -19,25 +22,175 @@
 #include <curlpp/Exception.hpp>
 
 using json = nlohmann::json;
+using std::cout;
+using std::endl;
 
-// Handled by Makefile
 #ifndef DEBUG
-#define DEBUG 0
+#define DEBUG 1
 #endif
 
 // Maximum number of threads (given by handout)
 #define MAX_THREADS 64
 
+// https://stackoverflow.com/questions/5207550/in-c-is-there-a-way-to-go-to-a-specific-line-in-a-text-file
+std::fstream& GotoLine(std::fstream& file, unsigned int num){
+    file.seekg(std::ios::beg);
+    if (num == 0) return file;
+    for(int i=0; i < num - 1; ++i) {
+        file.ignore(std::numeric_limits<std::streamsize>::max(),'\n');
+    }
+    return file;
+}
+
+void do_http(std::string http_options, std::string address, std::vector<std::fstream *> *payload_files, std::vector<unsigned> *payload_file_sizes, unsigned payload_file_index, 
+    unsigned start, unsigned size) {
+    cout << "Thread ID "<< std::this_thread::get_id() << " starting up with file_index " << 
+    payload_file_index << " start " << start << " and size " << size << endl;
+
+    auto json_options = json::parse(http_options);
+    if (DEBUG) cout << "do_http json_options:" << std::endl << json_options.dump(4) << endl;
+
+    std::string http_method = json_options["http_method"];
+    transform(http_method.begin(), http_method.end(), http_method.begin(), ::tolower);
+    auto http_data = json_options["http_data"];
+
+    // Outer fstream
+    // Get to proper line number
+    std::fstream &outer_fstream = GotoLine(*(payload_files->at(payload_file_index)), start);
+
+    // Remove outer loop file from vectors
+    // The inner_fstreams will be the file pointers to the inner payload files
+    // This is used to do the cartesian product
+    std::vector<std::fstream *> inner_fstreams = std::vector(*payload_files);
+    std::vector<unsigned> inner_sizes = std::vector(*payload_file_sizes);
+    inner_fstreams.erase(inner_fstreams.begin() + payload_file_index);
+    inner_sizes.erase(inner_sizes.begin() + payload_file_index);
+
+
+    // cURLpp to send http post request
+    try {
+        curlpp::Cleanup cleaner;
+        curlpp::Easy request;
+        
+        request.setOpt(new curlpp::options::Url(address)); 
+        request.setOpt(new curlpp::options::Verbose(true)); 
+        
+        // TODO: list of json headers
+        std::list<std::string> header; 
+        header.push_back("Content-Type: application/octet-stream"); 
+        
+        request.setOpt(new curlpp::options::HttpHeader(header)); 
+        
+        // Loop through outer data
+        std::string outer_line; 
+        for(unsigned outer_loop_counter = 0; outer_loop_counter < start + size; outer_loop_counter++) { 
+
+            // Read outer file line
+            std::getline(outer_fstream, outer_line);
+            cout << "Outer_line: " << outer_line << endl; 
+
+            StateList state_list = StateList(inner_sizes);
+
+            // Cartesian product loop using a state list
+            while (!state_list.is_done()) {
+                cout << "Iterations: " << state_list.get_iterations() << endl << std::flush;
+                
+                // TODO: remove this safety if
+                // if (state_list.get_iterations() > 5) break;
+
+                std::vector<unsigned> current_state = state_list.get_state();
+
+                // Loop through http_data and create key:value json object list with state_list checking for "$x" syntax
+                // data will store the kv pairs for the current iteration
+                json data;
+                for (auto& [key, value] : http_data.items()) {
+                    if (DEBUG) cout << "key " << key << ": " << value << endl;
+                    if (value.is_string()) {
+                        std::string value_string = value.get<std::string>();
+                        if (value_string.front() == '$') {
+                            // Remove '$'
+                            value_string.erase(value_string.begin());
+                            // Convert to int
+                            unsigned index = std::stoi(value_string);
+                            if (index == payload_file_index) {
+                                // Set the value to be the outer_line
+                                data[key] = outer_line;
+                            } else {
+                                if (index > payload_file_index) index--;
+                                // Find state (current line) of index
+                                // If state is 0, go to top, else fstream SHOULD be at top of file, so can just use getline
+                                if (DEBUG) cout << "inner_fstreams.size() " << inner_fstreams.size() << " index " << index << endl;
+                                std::fstream *current_fstream = inner_fstreams.at(index);
+                                std::string inner_line;
+                                cout << "current_state.at(" << index << "): " << current_state.at(index) << endl;
+                                if (current_state.at(index) == 0) current_fstream->seekg(std::ios::beg);
+
+                                std::getline(*current_fstream, inner_line);
+                                data[key] = inner_line;
+                            }
+                        } else {
+                            data[key] = value;
+                        }
+                    } else data[key] = value;
+                }
+
+                // TODO: could put this in the other loop
+                // Form encoded key0=value0&key1=value1...
+                std::string payload_string;
+                for (auto& [key, value] : data.items()) 
+                    payload_string.append(key + "=" + value.get<std::string>() + "&");
+
+                // Remove the last '&'
+                payload_string.pop_back();
+
+                if (http_method.compare("post") == 0) {
+                    // POST request
+                    request.setOpt(new curlpp::options::PostFields(payload_string));
+                    request.setOpt(new curlpp::options::PostFieldSize(payload_string.size()));
+                } else {
+                    // GET request
+                    // TODO: put cartesian product into querystring 
+
+                }
+
+                // TODO: cookies (example07)
+
+                // HTTP authorization header
+                // request.setOpt(new curlpp::options::UserPwd("user:password"));
+                
+                request.perform(); 
+
+                // other way to retreive URL
+                cout << endl 
+                    << "Effective URL: " 
+                    << curlpp::infos::EffectiveUrl::get(request)
+                    << endl;
+
+                cout << "Response code: " 
+                    << curlpp::infos::ResponseCode::get(request) 
+                    << endl;
+                state_list.next_state();
+            }
+        }
+    }
+    catch ( curlpp::LogicError & e ) {
+        cout << e.what() << endl;
+    }
+    catch ( curlpp::RuntimeError & e ) {
+        cout << e.what() << endl;
+    }
+}
+
 int main(int argc, char** argv) {
     if (DEBUG) {
-        for(int i = 0; i < argc; i++) std::cout << argv[i] << " ";
-        std::cout << "(" << argc << ")" << std::endl;
+        for(int i = 0; i < argc; i++) cout << argv[i] << " ";
+        cout << "(" << argc << ")" << endl;
     }
     if (argc != 2) {
         std::string output;
         if (argc > 2) output = "Too many arguments!";
         if (argc < 2) output = "Not enough arguments!";
-        std::cout << output << std::endl << "Usage: ./spaghetti config_file.json" << std::endl;
+        cout << output << std::endl << "Usage: ./spork config_file.json" << endl;
         exit(1);
     }
 
@@ -45,7 +198,7 @@ int main(int argc, char** argv) {
     std::fstream config_file;
     config_file.open(argv[1], std::ios::in);
     if (!config_file) {
-		std::cout << "Could not open configuration file: " << argv[1] << std::endl;
+		cout << "Could not open configuration file: " << argv[1] << endl;
         exit(1);
 	}
 
@@ -58,11 +211,11 @@ int main(int argc, char** argv) {
     try {
         config = json::parse(string_stream.str());
     } catch (const nlohmann::detail::parse_error& e) {
-        std::cout << "Error parsing json from " << argv[1] << std::endl;
+        cout << "Error parsing json from " << argv[1] << endl;
         exit(1);
     }
 
-    if (DEBUG) std::cout << config.dump(4) << std::endl;
+    if (DEBUG) cout << config.dump(4) << endl;
 
     // Set up as much of payload as possible -- libtins http / raw
     std::string address = config["address"];
@@ -71,21 +224,22 @@ int main(int argc, char** argv) {
     // Current number of threads
     unsigned int num_threads = config["threads"];
     if (num_threads > MAX_THREADS) { 
-        std::cout << "Threads provided " << num_threads << " > MAX_THREADS " << MAX_THREADS << std::endl;
+        cout << "Threads provided " << num_threads << " > MAX_THREADS " << MAX_THREADS << endl;
         exit(1);
     }
 
-    std::vector<std::fstream *> data_files;
-    std::vector<int> data_file_sizes;
+    std::vector<std::fstream*> data_files;
+    std::vector<unsigned> data_file_sizes;
+    unsigned max_file_index = 0;
     // even easier with structured bindings (C++17)
     // Open payload files
     for (auto& [key, value] : config["payload"].items()) {
-        if (DEBUG) std::cout << "Opening: " << value << std::endl;
-        std::fstream *file = new std::fstream;
+        if (DEBUG) cout << "Opening: " << value << endl;
+        std::fstream *file = new std::fstream();
         file->open(value, std::ios::in);
 
         if (!(*file)) {
-            std::cout << "Could not open: " << value << std::endl;
+            cout << "Could not open: " << value << endl;
             exit(1);
         }
 
@@ -93,7 +247,10 @@ int main(int argc, char** argv) {
         
         // Find number of elements in newline separated files
         data_file_sizes.push_back(std::count(std::istreambuf_iterator<char>(*file), std::istreambuf_iterator<char>(), '\n'));
-        if (DEBUG) std::cout << "File size: " << data_file_sizes.back() << std::endl;
+        if (DEBUG) cout << "File size: " << data_file_sizes.back() << endl;
+        
+        // Update largest file index
+        if (data_file_sizes.back() > data_file_sizes[max_file_index]) max_file_index = data_file_sizes.size() - 1;
     }
 
 
@@ -102,67 +259,48 @@ int main(int argc, char** argv) {
     // Lowercase protocol 
     transform(protocol.begin(), protocol.end(), protocol.begin(), ::tolower);
     if (protocol.compare("http") == 0) {
-        if (DEBUG) std::cout << "Detected http" << std::endl;
-        std::string http_method = protocol_options["http_method"];
-        transform(http_method.begin(), http_method.end(), http_method.begin(), ::tolower);
-        auto http_data = protocol_options["http_data"];
+        if (DEBUG) cout << "Detected http" << endl;
 
-        // cURLpp to send http post request
-        try {
-            curlpp::Cleanup cleaner;
-            curlpp::Easy request;
-            
-            request.setOpt(new curlpp::options::Url(address)); 
-            request.setOpt(new curlpp::options::Verbose(true)); 
-            
-            std::list<std::string> header; 
-            header.push_back("Content-Type: application/octet-stream"); 
-            
-            request.setOpt(new curlpp::options::HttpHeader(header)); 
-            
-            request.setOpt(new curlpp::options::PostFields("abcd"));
-            request.setOpt(new curlpp::options::PostFieldSize(5));
+        // Split largest file by num_procs
+        div_t div_result = std::div((int) (data_file_sizes[max_file_index]), (int)num_threads);
+        unsigned split_data_size = div_result.quot;
+        unsigned split_data_size_remainder = div_result.rem;
 
-            request.setOpt(new curlpp::options::UserPwd("user:password"));
-            
-            request.perform(); 
+        if (DEBUG) cout << "Each thread will get " << split_data_size << " entries from " << max_file_index 
+        << " remainder of " << split_data_size_remainder << " will be split between first threads" << endl;
 
-            //other way to retreive URL
-            std::cout << std::endl 
-                << "Effective URL: " 
-                << curlpp::infos::EffectiveUrl::get(request)
-                << std::endl;
+        // Do the threading
+        std::vector<std::thread> threads;
+        unsigned start_position = 0;
+        for (unsigned i = 0; i < num_threads; i++) {
+            unsigned final_data_size = split_data_size;
 
-            std::cout << "Response code: " 
-                << curlpp::infos::ResponseCode::get(request) 
-                << std::endl;
+            // Distribute remainder to first threads
+            if(split_data_size_remainder > 0) {
+                final_data_size++;
+                split_data_size_remainder--;
+            }
 
-        }
-        catch ( curlpp::LogicError & e ) {
-            std::cout << e.what() << std::endl;
-        }
-        catch ( curlpp::RuntimeError & e ) {
-            std::cout << e.what() << std::endl;
+            // index, start, size
+            // std::thread current_thread(do_http, protocol_options.dump(), address, &data_files, max_file_index, start_position, final_data_size);
+            threads.emplace_back(std::thread(do_http, protocol_options.dump(), address, &data_files, &data_file_sizes, max_file_index, start_position, final_data_size));
+            start_position += final_data_size;
         }
 
+        unsigned joined_thread_count = 0;
+        while (joined_thread_count < num_threads) {
+            for (std::thread &current_thread : threads) {
+                // synchronize threads:
+                if (current_thread.joinable()) {
+                    if (DEBUG) cout << "Joining thread " << current_thread.get_id() << endl;
+                    current_thread.join();
+                    joined_thread_count++;
+                }
+            }
+        }
     } else {
         // TODO: support raw (nc / ncat / raw sockets?)
-        std::cout << "Unsupported protocol " << protocol <<  " only supporting http currently" << std::endl;
+        cout << "Unsupported protocol " << protocol <<  " only supporting http currently" << endl;
         exit(1);
     }
-
-    // even easier with structured bindings (C++17)
-    // for (auto& [key, value] : o.items()) {
-    //   std::cout << key << " : " << value << "\n";
-    // }
-
-    // Open read only file descriptors to payload data files
-    // Split based off of num_elements -- find the largest file and split by number of processors -- this will be the "outer loop"
-
-    // std::ifstream inFile("file"); 
-    // std::count(std::istreambuf_iterator<char>(inFile), std::istreambuf_iterator<char>(), '\n');
-
-        // Case for elements > num_processors
-        // Case for elements == num_processors
-        // Case for elements < num_processors
 }
